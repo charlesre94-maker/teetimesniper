@@ -450,33 +450,8 @@ input:focus, select:focus {
   border-color: var(--light);
 }
 
-.alert-card.disabled .alert-course {
+.alert-card.disabled .alert-card-body {
   opacity: 0.35;
-}
-
-.alert-card.disabled .alert-meta {
-  opacity: 0.35;
-}
-
-.alert-card.disabled .alert-card-actions {
-  opacity: 1;
-}
-
-.alert-card.disabled .toggle {
-  opacity: 1;
-}
-
-.alert-card.disabled .toggle-slider {
-  opacity: 1;
-}
-
-.alert-card.disabled .toggle input:checked + .toggle-slider {
-  background: var(--green-mid);
-}
-
-.alert-card.disabled .btn-danger {
-  opacity: 1;
-  color: var(--red);
 }
 
 .alert-card-top {
@@ -1269,13 +1244,15 @@ async function loadAlerts() {
 
   list.innerHTML = data.map(a => `
     <div class="alert-card ${a.enabled ? '' : 'disabled'}" id="card-${a.id}">
-      <div class="alert-card-top">
-        <div class="alert-course">${a.course_name}</div>
-      </div>
-      <div class="alert-meta">
-        <span class="meta-tag">📅 ${formatDate(a.date_from)} – ${formatDate(a.date_to)}</span>
-        <span class="meta-tag">⏰ ${a.time_from.slice(0,5)} – ${a.time_to.slice(0,5)}</span>
-        <span class="meta-tag">👥 ${a.players} players</span>
+      <div class="alert-card-body">
+        <div class="alert-card-top">
+          <div class="alert-course">${a.course_name}</div>
+        </div>
+        <div class="alert-meta">
+          <span class="meta-tag">📅 ${formatDate(a.date_from)} – ${formatDate(a.date_to)}</span>
+          <span class="meta-tag">⏰ ${a.time_from.slice(0,5)} – ${a.time_to.slice(0,5)}</span>
+          <span class="meta-tag">👥 ${a.players} players</span>
+        </div>
       </div>
       <div class="alert-card-actions">
         <label class="toggle">
@@ -1438,30 +1415,39 @@ async function saveAlert() {
   btn.innerHTML = '<span class="spinner"></span>';
   btn.disabled = true;
 
-  // Refresh session before insert
-  await sb.auth.getSession();
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Request timed out — check your internet connection or Supabase RLS policies.')), 10000)
+  );
 
-  const { data: insertData, error } = await sb.from('alerts').insert({
-    user_id: currentUser.id,
-    course_id: courseId,
-    course_name: courseName,
-    players,
-    date_from: dateFrom,
-    date_to: dateTo,
-    time_from: timeFrom,
-    time_to: timeTo,
-    enabled: true
-  }).select();
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('Session expired — please sign out and sign in again.');
 
-  btn.textContent = 'Save Alert Target';
-  btn.disabled = false;
+    const insertPromise = sb.from('alerts').insert({
+      user_id: currentUser.id,
+      course_id: courseId,
+      course_name: courseName,
+      players,
+      date_from: dateFrom,
+      date_to: dateTo,
+      time_from: timeFrom,
+      time_to: timeTo,
+      enabled: true
+    }).select();
 
-  if (error) {
-    modalError.textContent = 'Error: ' + error.message + ' (code: ' + error.code + ')';
-    modalError.style.display = 'block';
-  } else {
+    const { data: insertData, error } = await Promise.race([insertPromise, timeout]);
+
+    if (error) throw new Error(error.message + (error.code ? ` (code: ${error.code})` : ''));
+
     closeModal();
     await loadAlerts();
+
+  } catch (err) {
+    modalError.textContent = '⚠️ ' + err.message;
+    modalError.style.display = 'block';
+  } finally {
+    btn.textContent = 'Save Alert Target';
+    btn.disabled = false;
   }
 }
 
@@ -1548,6 +1534,30 @@ init();
   </div>
 </div>
 
+
+
+init();
+</script>
+<!-- ══════════════════════════════════════ -->
+<!-- MODAL: CONFIRM DELETE                 -->
+<!-- ══════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal" style="padding:28px 24px 32px">
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:36px;margin-bottom:12px;">🗑️</div>
+      <div style="font-family:'Playfair Display',serif;font-size:20px;color:var(--ink);margin-bottom:8px;">Remove this alert?</div>
+      <div style="font-size:14px;color:var(--gray);line-height:1.6;" id="confirm-message">
+        This alert target will be permanently removed.
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <button class="btn btn-outline" style="margin:0" onclick="closeConfirm()">Cancel</button>
+      <button class="btn" style="background:var(--red);color:white;margin:0" onclick="confirmDelete()">Yes, Remove</button>
+    </div>
+  </div>
+</div>
+
+<script>
 // Confirm delete dialog
 let pendingDeleteId = null;
 
@@ -1576,12 +1586,9 @@ async function confirmDelete() {
   await loadAlerts();
 }
 
-// Close confirm on backdrop click
 document.getElementById('modal-confirm').addEventListener('click', function(e) {
   if (e.target === this) closeConfirm();
 });
-
-
 </script>
 </body>
 </html>
