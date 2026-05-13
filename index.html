@@ -1013,6 +1013,26 @@ input:focus, select:focus {
 <script>
 // ── SUPABASE INIT ──
 const { createClient } = supabase;
+
+// Use memory storage if localStorage is blocked (e.g. Edge tracking prevention)
+const memoryStorage = (() => {
+  let store = {};
+  return {
+    getItem: (key) => store[key] ?? null,
+    setItem: (key, value) => { store[key] = value; },
+    removeItem: (key) => { delete store[key]; }
+  };
+})();
+
+let storageBackend;
+try {
+  localStorage.setItem('_test', '1');
+  localStorage.removeItem('_test');
+  storageBackend = localStorage;
+} catch(e) {
+  storageBackend = memoryStorage;
+}
+
 const sb = createClient(
   'https://qspuvrpofwdsdsiihplr.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzcHV2cnBvZndkc2RzaWlocGxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxMDg2MTUsImV4cCI6MjA5MzY4NDYxNX0.JGq2B4Qcu0FsAlhtnG9mAeGN6jmLKVPvE6iacrz4G1Y',
@@ -1021,7 +1041,7 @@ const sb = createClient(
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      storage: window.localStorage
+      storage: storageBackend
     }
   }
 );
@@ -1299,25 +1319,31 @@ async function loadHistory() {
 
 // ── TOGGLE ALERT ──
 async function toggleAlert(id, enabled) {
-  console.log('toggleAlert called:', id, enabled);
-
-  const { data: { session } } = await sb.auth.getSession();
+  console.log("toggleAlert called:", id, enabled);
 
   const { data, error } = await sb
-    .from('alerts')
+    .from("alerts")
     .update({ enabled: enabled })
-    .eq('id', id)
+    .eq("id", id)
     .select();
 
   if (error) {
-    console.error('Toggle error:', error.message, error.code);
-    alert('Could not update alert: ' + error.message);
+    console.error("Toggle error:", error.message, error.code);
+    alert("Could not update alert: " + error.message);
     const checkbox = document.querySelector(`#card-${id} input[type=checkbox]`);
     if (checkbox) checkbox.checked = !enabled;
     return;
   }
 
-  await loadAlerts();
+  // Immediately update card class without full reload
+  const card = document.getElementById("card-" + id);
+  if (card) {
+    if (enabled) {
+      card.classList.remove("disabled");
+    } else {
+      card.classList.add("disabled");
+    }
+  }
 }
 
 // ── DELETE ALERT — handled by confirm dialog below ──
